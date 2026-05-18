@@ -3,7 +3,7 @@ import sqlite3
 import requests
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 TELEGRAM_BOT_TOKEN = "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q"
 TELEGRAM_CHAT_ID   = "993355449"
 DB_PATH            = "coins.db"
@@ -105,12 +105,12 @@ Web:{web or "yok"}, Twitter:{tw or "yok"}, Telegram:{tg or "yok"}"""
     try:
         r = requests.post("https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization":f"Bearer {OPENROUTER_API_KEY}","Content-Type":"application/json"},
-            json={"model":"anthropic/claude-haiku","max_tokens":200,"messages":[{"role":"user","content":prompt}]},
+            json={"model":"openai/gpt-4o-mini","max_tokens":200,"messages":[{"role":"user","content":prompt}]},
             timeout=30)
         raw = r.json()["choices"][0]["message"]["content"].strip()
         return json.loads(raw[raw.find("{"):raw.rfind("}")+1])
     except Exception as e:
-        print(f"AI hata: {e}")
+        print(f"AI hata: {e}"); import traceback; traceback.print_exc()
         return {"project_type":"Bilinmiyor","risk_score":5,"summary":"Analiz yapilamadi."}
 
 def send_tg(d):
