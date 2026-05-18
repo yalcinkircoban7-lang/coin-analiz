@@ -3,13 +3,13 @@ import sqlite3
 import requests
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 TELEGRAM_BOT_TOKEN = "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q"
 TELEGRAM_CHAT_ID   = "993355449"
 DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 365
-MIN_LIQUIDITY_USD  = 5000
-MIN_VOLUME_24H_USD = 1000
+MAX_AGE_DAYS       = 100
+MIN_LIQUIDITY_USD  = 10000
+MIN_VOLUME_24H_USD = 3000
 SCAN_INTERVAL_MIN  = 5
 CHAINS = ["ethereum", "bsc", "solana", "base", "arbitrum"]
 RISK_EMOJI = {1:"G",2:"G",3:"G",4:"O",5:"O",6:"O",7:"R",8:"R",9:"R",10:"R"}
@@ -51,7 +51,7 @@ def mark_notified(addr):
 
 def fetch_pairs(chain):
     try:
-        url = f"https://api.dexscreener.com/latest/dex/search?q=new"
+        url = f"https://api.dexscreener.com/latest/dex/search?q={__import__('random').choice(['sol','base','defi','meme','ai','inu','moon','doge','pepe','cat','baby','elon','trump','biden','shib'])}"
         r = requests.get(url, timeout=15)
         data = r.json()
         if isinstance(data, list):
