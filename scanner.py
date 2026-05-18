@@ -7,12 +7,12 @@ OPENROUTER_API_KEY = "sk-or-v1-b24c2ea284ebff85334d833b586d52a2179532b746fb9e2c9
 TELEGRAM_BOT_TOKEN = "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q"
 TELEGRAM_CHAT_ID   = "993355449"
 DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 30
-MIN_LIQUIDITY_USD  = 50000
-MIN_VOLUME_24H_USD = 5000
+MAX_AGE_DAYS       = 365
+MIN_LIQUIDITY_USD  = 5000
+MIN_VOLUME_24H_USD = 1000
 SCAN_INTERVAL_MIN  = 5
 CHAINS = ["ethereum", "bsc", "solana", "base", "arbitrum"]
-RISK_EMOJI = {1:"🟢",2:"🟢",3:"🟢",4:"🟡",5:"🟡",6:"🟡",7:"🔴",8:"🔴",9:"🔴",10:"🔴"}
+RISK_EMOJI = {1:"G",2:"G",3:"G",4:"O",5:"O",6:"O",7:"R",8:"R",9:"R",10:"R"}
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -50,13 +50,13 @@ def mark_notified(addr):
     conn.close()
 
 def fetch_pairs(chain):
-    import random
-    kelimeler = ["token","coin","inu","pepe","ai","moon","based","doge","cat","baby"]
-    q = random.choice(kelimeler)
     try:
-        r = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=15)
+        url = f"https://api.dexscreener.com/latest/dex/search?q=new"
+        r = requests.get(url, timeout=15)
         data = r.json()
-        if isinstance(data, dict):
+        if isinstance(data, list):
+            pairs = data
+        elif isinstance(data, dict):
             pairs = data.get("pairs") or []
         else:
             pairs = []
@@ -68,7 +68,8 @@ def fetch_pairs(chain):
 
 def is_new(pair):
     ms = pair.get("pairCreatedAt")
-    if not ms: return False
+    if not ms:
+        return False
     return (time.time()*1000 - ms) / (1000*86400) <= MAX_AGE_DAYS
 
 def ok_filter(pair):
@@ -79,23 +80,24 @@ def ok_filter(pair):
 def get_socials(pair):
     info = pair.get("info") or {}
     sites = info.get("websites") or []
-    socs  = info.get("socials") or []
+    socs = info.get("socials") or []
     web = sites[0].get("url","") if sites else ""
     tw = tg = ""
     for s in socs:
-        if s.get("type","").lower() == "twitter": tw = s.get("url","")
-        if s.get("type","").lower() == "telegram": tg = s.get("url","")
+        if s.get("type","").lower() == "twitter":
+            tw = s.get("url","")
+        if s.get("type","").lower() == "telegram":
+            tg = s.get("url","")
     return web, tw, tg
 
 def analyze(pair, web, tw, tg):
     import json
     base = pair.get("baseToken",{})
-    liq  = pair.get("liquidity",{})
-    vol  = pair.get("volume",{})
+    liq = pair.get("liquidity",{})
+    vol = pair.get("volume",{})
     txns = pair.get("txns",{}).get("h24",{})
     prompt = f"""Token analiz et ve sadece JSON don:
-{{\"project_type\":\"Memecoin/Utility/DeFi/AI/Bilinmiyor\",\"risk_score\":5,\"summary\":\"Turkce 2 cumle\"}}
-
+{{"project_type":"Memecoin/Utility/DeFi/AI/Bilinmiyor","risk_score":5,"summary":"Turkce 2 cumle"}}
 Bilgiler: {base.get("name")} ({base.get("symbol")}), Zincir:{pair.get("chainId")},
 Likidite:${liq.get("usd",0):.0f}, Hacim:${vol.get("h24",0):.0f},
 Alim:{txns.get("buys",0)}, Satim:{txns.get("sells",0)},
@@ -103,7 +105,7 @@ Web:{web or "yok"}, Twitter:{tw or "yok"}, Telegram:{tg or "yok"}"""
     try:
         r = requests.post("https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization":f"Bearer {OPENROUTER_API_KEY}","Content-Type":"application/json"},
-            json={"model":"anthropic/claude-haiku-4-5","max_tokens":200,"messages":[{"role":"user","content":prompt}]},
+            json={"model":"anthropic/claude-haiku","max_tokens":200,"messages":[{"role":"user","content":prompt}]},
             timeout=30)
         raw = r.json()["choices"][0]["message"]["content"].strip()
         return json.loads(raw[raw.find("{"):raw.rfind("}")+1])
@@ -113,10 +115,11 @@ Web:{web or "yok"}, Twitter:{tw or "yok"}, Telegram:{tg or "yok"}"""
 
 def send_tg(d):
     r = d["risk_score"]
+    emoji = RISK_EMOJI.get(r,"?")
     msg = f"""Yeni Token: {d["base_name"]} ({d["base_symbol"]})
 Zincir: {d["chain_id"]} | DEX: {d["dex_id"]}
 Likidite: ${d["liquidity_usd"]:,.0f} | Hacim: ${d["volume_24h"]:,.0f}
-Tip: {d["project_type"]} | Risk: {RISK_EMOJI.get(r,"?")} {r}/10
+Tip: {d["project_type"]} | Risk: {emoji} {r}/10
 {d["ai_summary"]}
 https://dexscreener.com/{d["chain_id"]}/{d["pair_address"]}"""
     try:
@@ -132,16 +135,18 @@ def scan():
     for chain in CHAINS:
         print(f"  {chain} taraniyor...")
         for pair in fetch_pairs(chain):
-            if not is_new(pair) or not ok_filter(pair): continue
+            if not is_new(pair) or not ok_filter(pair):
+                continue
             addr = pair.get("pairAddress","")
-            if not addr or is_notified(addr): continue
+            if not addr or is_notified(addr):
+                continue
             web, tw, tg = get_socials(pair)
-            print(f"  Yeni token bulundu: {pair.get('baseToken',{}).get('symbol','?')}")
+            print(f"  Yeni token: {pair.get('baseToken',{}).get('symbol','?')}")
             ai = analyze(pair, web, tw, tg)
             time.sleep(0.5)
             base = pair.get("baseToken",{})
-            liq  = pair.get("liquidity",{})
-            vol  = pair.get("volume",{})
+            liq = pair.get("liquidity",{})
+            vol = pair.get("volume",{})
             txns = pair.get("txns",{}).get("h24",{})
             d = {"pair_address":addr,"chain_id":pair.get("chainId",""),
                 "base_symbol":base.get("symbol",""),"base_name":base.get("name",""),
@@ -166,13 +171,3 @@ while True:
     scan()
     print(f"{SCAN_INTERVAL_MIN} dakika bekleniyor...")
     time.sleep(SCAN_INTERVAL_MIN * 60)
-
-import requests
-r = requests.get("https://api.dexscreener.com/latest/dex/search?q=a&chainIds=ethereum", timeout=15)
-print("Status:", r.status_code)
-print("Ilk 500 karakter:", r.text[:500])
-
-requests
-python-telegram-bot
-
-worker: python scanner.py
