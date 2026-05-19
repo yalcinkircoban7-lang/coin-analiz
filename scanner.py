@@ -1,9 +1,10 @@
+import os
 import time
 import sqlite3
 import requests
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 TELEGRAM_BOT_TOKEN = "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q"
 TELEGRAM_CHAT_ID   = "993355449"
 DB_PATH            = "coins.db"
