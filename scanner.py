@@ -1,7 +1,7 @@
 import os, time, json, sqlite3, requests, random
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 DB_PATH            = "coins.db"
@@ -9,7 +9,6 @@ MAX_AGE_DAYS       = 60
 MIN_LIQUIDITY_USD  = 5000
 MIN_VOLUME_24H_USD = 1000
 SCAN_INTERVAL_MIN  = 5
-CHAINS = ["ethereum","bsc","solana","base","arbitrum"]
 KEYWORDS = ["pump","launch","gem","fair","alpha","micro","nano","mini","new","stealth"]
 
 def init_db():
@@ -129,7 +128,7 @@ Web: {web or "yok"} | Twitter: {tw or "yok"} | Telegram: {tg or "yok"}
 def send_tg(d):
     r = d["risk_score"]
     emoji = "🟢" if r<=3 else "🟡" if r<=6 else "🔴"
-    wash = "⚠️ WASH TRADING TESPİT EDİLDİ!\n" if d.get("wash_trading") else ""
+    wash = "⚠️ WASH TRADING TESPIT EDILDI!\n" if d.get("wash_trading") else ""
     liq_emoji = "✅" if "kilitli" in d["liq_status"].lower() and "degil" not in d["liq_status"].lower() else "⚠️" if "honeypot" in d["liq_status"].lower() else "❌"
     msg = f"""🚨 Yeni Token: {d["base_name"]} ({d["base_symbol"]})
 🔗 {d["chain_id"]} | {d["dex_id"]}
@@ -187,7 +186,7 @@ def scan():
     print(f"Bitti. {found} yeni token.")
 
 init_db()
-print(f"API Key: {OPENROUTER_API_KEY[:20]}...")
+print(f"API Key uzunlugu: {len(OPENROUTER_API_KEY)}")
 while True:
     scan()
     print(f"{SCAN_INTERVAL_MIN} dakika bekleniyor...")
