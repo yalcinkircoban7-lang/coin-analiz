@@ -74,6 +74,37 @@ def get_socials(pair):
         if t == "telegram": tg = s.get("url","")
     return web, tw, tg
 
+def get_pair_age(pair_created_ms):
+    if not pair_created_ms:
+        return "Bilinmiyor"
+    age_seconds = (time.time() * 1000 - pair_created_ms) / 1000
+    if age_seconds < 3600:
+        return f"{int(age_seconds/60)} dakika once listelendi"
+    elif age_seconds < 86400:
+        return f"{int(age_seconds/3600)} saat once listelendi"
+    else:
+        return f"{int(age_seconds/86400)} gun once listelendi"
+
+def get_top_transactions(chain_id, pair_address):
+    try:
+        url = f"https://api.dexscreener.com/latest/dex/pairs/{chain_id}/{pair_address}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        pairs = data.get("pairs") or []
+        if not pairs:
+            return "", ""
+        pair = pairs[0]
+        txns = pair.get("txns", {})
+        buys_h1 = txns.get("h1", {}).get("buys", 0)
+        sells_h1 = txns.get("h1", {}).get("sells", 0)
+        vol_h1 = pair.get("volume", {}).get("h1", 0)
+        vol_h6 = pair.get("volume", {}).get("h6", 0)
+        buy_info = f"Son 1s: {buys_h1} alim | Son 6s: {vol_h6:,.0f}$"
+        sell_info = f"Son 1s: {sells_h1} satim | Toplam: {vol_h1:,.0f}$"
+        return buy_info, sell_info
+    except:
+        return "", ""
+
 def check_token_security(token_address, chain_id):
     chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161","solana":"900"}
     chain = chain_map.get(chain_id, "1")
@@ -195,8 +226,11 @@ def scan():
             continue
         web, tw, tg = get_socials(pair)
         token_addr = (pair.get("baseToken") or {}).get("address","")
-        liq_status, holder_status = check_token_security(token_addr, pair.get("chainId",""))
-        print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({pair.get('chainId','')})")
+        chain_id = pair.get("chainId","")
+        liq_status, holder_status = check_token_security(token_addr, chain_id)
+        age_str = get_pair_age(pair.get("pairCreatedAt"))
+        buy_info, sell_info = get_top_transactions(chain_id, addr)
+        print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({chain_id})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
         base = pair.get("baseToken",{})
@@ -209,17 +243,19 @@ def scan():
         liq_emoji = "✅" if "kilitli" in liq_status.lower() and "degil" not in liq_status.lower() else "⚠️" if "honeypot" in liq_status.lower() else "❌"
         holder_emoji = "⚠️" if "rug" in holder_status.lower() else "🟡" if "dikkat" in holder_status.lower() else "✅"
         msg = f"""🚨 Yeni Token: {base.get("name","")} ({base.get("symbol","")})
-🔗 {pair.get("chainId","")} | {pair.get("dexId","")}
+🔗 {chain_id} | {pair.get("dexId","")}
+🕐 {age_str}
 💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
 📈 Alım: {txns.get("buys",0)} | Satım: {txns.get("sells",0)}
+📊 {buy_info}
 🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
 {liq_emoji} {liq_status}
 {holder_emoji} {holder_status}
 {wash}📝 {ai.get("summary","")}
-🔎 https://dexscreener.com/{pair.get("chainId","")}/{addr}"""
+🔎 https://dexscreener.com/{chain_id}/{addr}"""
         send_tg(msg)
         d = {
-            "pair_address": addr, "chain_id": pair.get("chainId",""),
+            "pair_address": addr, "chain_id": chain_id,
             "base_symbol": base.get("symbol",""), "base_name": base.get("name",""),
             "quote_symbol": (pair.get("quoteToken") or {}).get("symbol",""),
             "dex_id": pair.get("dexId",""), "pair_created": pair.get("pairCreatedAt",0),
