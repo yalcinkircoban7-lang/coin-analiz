@@ -19,7 +19,8 @@ def init_db():
         liquidity_usd REAL, fdv_usd REAL, volume_24h REAL, price_usd TEXT,
         buys_24h INTEGER, sells_24h INTEGER, website TEXT, twitter TEXT,
         telegram TEXT, ai_summary TEXT, risk_score INTEGER, project_type TEXT,
-        liq_status TEXT, notified INTEGER DEFAULT 0, discovered_at TEXT)""")
+        liq_status TEXT, holder_status TEXT, notified INTEGER DEFAULT 0,
+        discovered_at TEXT)""")
     conn.commit()
     conn.close()
     print("Veritabani hazir.")
@@ -36,7 +37,8 @@ def save_token(data):
         :pair_address,:chain_id,:base_symbol,:base_name,:quote_symbol,:dex_id,
         :pair_created,:liquidity_usd,:fdv_usd,:volume_24h,:price_usd,
         :buys_24h,:sells_24h,:website,:twitter,:telegram,
-        :ai_summary,:risk_score,:project_type,:liq_status,:notified,:discovered_at)""", data)
+        :ai_summary,:risk_score,:project_type,:liq_status,:holder_status,
+        :notified,:discovered_at)""", data)
     conn.commit()
     conn.close()
 
@@ -72,7 +74,7 @@ def get_socials(pair):
         if t == "telegram": tg = s.get("url","")
     return web, tw, tg
 
-def check_liquidity_lock(token_address, chain_id):
+def check_token_security(token_address, chain_id):
     chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161","solana":"900"}
     chain = chain_map.get(chain_id, "1")
     try:
@@ -81,15 +83,25 @@ def check_liquidity_lock(token_address, chain_id):
         data = r.json()
         result = data.get("result", {})
         if not result:
-            return "Bilgi yok"
+            return "Bilgi yok", "Bilgi yok"
         token_data = list(result.values())[0]
         if str(token_data.get("is_honeypot","0")) == "1":
-            return "HONEYPOT - Satis yapilamaz!"
-        if str(token_data.get("lp_locked","0")) == "1":
-            return "Likidite kilitli"
-        return "Likidite KILITLI DEGIL"
+            return "HONEYPOT - Satis yapilamaz!", "Bilgi yok"
+        liq_status = "Likidite kilitli" if str(token_data.get("lp_locked","0")) == "1" else "Likidite KILITLI DEGIL"
+        holders = token_data.get("holders", [])
+        if holders:
+            top10 = sum(float(h.get("percent","0")) for h in holders[:10]) * 100
+            if top10 >= 80:
+                holder_status = f"Top 10 holder: %{top10:.1f} - RUG PULL RISKI!"
+            elif top10 >= 50:
+                holder_status = f"Top 10 holder: %{top10:.1f} - Dikkatli ol"
+            else:
+                holder_status = f"Top 10 holder: %{top10:.1f} - Dagilim iyi"
+        else:
+            holder_status = "Holder bilgisi yok"
+        return liq_status, holder_status
     except:
-        return "Kontrol yapilamadi"
+        return "Kontrol yapilamadi", "Bilgi yok"
 
 def analyze(pair, web, tw, tg):
     base = pair.get("baseToken",{})
@@ -183,7 +195,7 @@ def scan():
             continue
         web, tw, tg = get_socials(pair)
         token_addr = (pair.get("baseToken") or {}).get("address","")
-        liq_status = check_liquidity_lock(token_addr, pair.get("chainId",""))
+        liq_status, holder_status = check_token_security(token_addr, pair.get("chainId",""))
         print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({pair.get('chainId','')})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
@@ -195,12 +207,14 @@ def scan():
         emoji = "🟢" if r<=3 else "🟡" if r<=6 else "🔴"
         wash = "⚠️ WASH TRADING TESPIT EDILDI!\n" if ai.get("wash_trading") else ""
         liq_emoji = "✅" if "kilitli" in liq_status.lower() and "degil" not in liq_status.lower() else "⚠️" if "honeypot" in liq_status.lower() else "❌"
+        holder_emoji = "⚠️" if "rug" in holder_status.lower() else "🟡" if "dikkat" in holder_status.lower() else "✅"
         msg = f"""🚨 Yeni Token: {base.get("name","")} ({base.get("symbol","")})
 🔗 {pair.get("chainId","")} | {pair.get("dexId","")}
 💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
 📈 Alım: {txns.get("buys",0)} | Satım: {txns.get("sells",0)}
 🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
 {liq_emoji} {liq_status}
+{holder_emoji} {holder_status}
 {wash}📝 {ai.get("summary","")}
 🔎 https://dexscreener.com/{pair.get("chainId","")}/{addr}"""
         send_tg(msg)
@@ -215,7 +229,8 @@ def scan():
             "website": web, "twitter": tw, "telegram": tg,
             "ai_summary": ai.get("summary",""), "risk_score": r,
             "project_type": ai.get("project_type","Bilinmiyor"),
-            "liq_status": liq_status, "notified": 1,
+            "liq_status": liq_status, "holder_status": holder_status,
+            "notified": 1,
             "discovered_at": datetime.now(timezone.utc).isoformat()
         }
         save_token(d)
