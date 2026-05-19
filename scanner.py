@@ -1,7 +1,7 @@
 import os, time, json, sqlite3, requests, random
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 DB_PATH            = "coins.db"
