@@ -145,6 +145,44 @@ def send_tg(d):
     except Exception as e:
         print(f"Telegram hata: {e}")
 
+def check_price_changes():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM tokens WHERE notified=1").fetchall()
+        conn.close()
+        for row in rows:
+            row = dict(row)
+            addr = row["pair_address"]
+            chain = row["chain_id"]
+            old_price = float(row["price_usd"] or 0)
+            if old_price == 0:
+                continue
+            try:
+                r = requests.get(f"https://api.dexscreener.com/latest/dex/pairs/{chain}/{addr}", timeout=10)
+                data = r.json()
+                pairs = data.get("pairs") or []
+                if not pairs:
+                    continue
+                new_price = float(pairs[0].get("priceUsd") or 0)
+                if new_price == 0:
+                    continue
+                change = ((new_price - old_price) / old_price) * 100
+                if change >= 50:
+                    msg = f"🚀 PUMP! {row['base_name']} ({row['base_symbol']})\n+{change:.1f}% yükseldi!\nEski: ${old_price:.6f} → Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                        json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+                    conn2 = sqlite3.connect(DB_PATH)
+                    conn2.execute("UPDATE tokens SET price_usd=? WHERE pair_address=?", (str(new_price), addr))
+                    conn2.commit()
+                    conn2.close()
+                elif change <= -30:
+                    msg = f"📉 DUMP! {row['base_name']} ({row['base_symbol']})\n{change:.1f}% düştü!\nEski: ${old_price:.6f} → Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                        json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+    except Exception as e:
+        print(f"Fiyat takip hata: {e}")
+
 def scan():
     keyword = random.choice(KEYWORDS)
     print(f"\nTarama: {datetime.now().strftime('%H:%M:%S')} | Kelime: {keyword}")
@@ -183,7 +221,8 @@ def scan():
         save_token(d)
         send_tg(d)
         found += 1
-    print(f"Bitti. {found} yeni token.")
+  print(f"Bitti. {found} yeni token.")
+    check_price_changes()
 
 init_db()
 print(f"API Key uzunlugu: {len(OPENROUTER_API_KEY)}")
