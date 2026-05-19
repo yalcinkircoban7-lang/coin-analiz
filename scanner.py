@@ -82,6 +82,27 @@ def get_socials(pair):
         if t == "telegram": tg = s.get("url","")
     return web, tw, tg
 
+def check_liquidity_lock(token_address, chain_id):
+    chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161","solana":"900"}
+    chain = chain_map.get(chain_id, "1")
+    try:
+        url = f"https://api.gopluslabs.io/api/v1/token_security/{chain}?contract_addresses={token_address}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        result = data.get("result", {})
+        if not result:
+            return False, "Bilgi yok"
+        token_data = list(result.values())[0]
+        lp_locked = token_data.get("lp_locked", "0")
+        honeypot = token_data.get("is_honeypot", "0")
+        if str(honeypot) == "1":
+            return False, "HONEYPOT - Satis yapilamaz!"
+        if str(lp_locked) == "1":
+            return True, "Likidite kilitli"
+        return False, "Likidite KILITLI DEGIL"
+    except:
+        return False, "Kontrol yapilamadi"
+
 def analyze(pair, web, tw, tg):
     base = pair.get("baseToken",{})
     liq  = pair.get("liquidity",{})
@@ -141,7 +162,8 @@ def send_tg(d):
 💧 Likidite: ${d["liquidity_usd"]:,.0f} | Hacim: ${d["volume_24h"]:,.0f}
 📈 Alım: {d["buys_24h"]} | Satım: {d["sells_24h"]}
 🏷️ Tip: {d["project_type"]} | Risk: {emoji} {r}/10
-{wash}📝 {d["ai_summary"]}
+{wash}🔒 Likidite: {liq_status}
+📝 {d["ai_summary"]}
 🔎 https://dexscreener.com/{d["chain_id"]}/{d["pair_address"]}"""
     try:
         requests.post(
@@ -167,6 +189,8 @@ def scan():
         if not addr or is_notified(addr):
             continue
         web, tw, tg = get_socials(pair)
+        token_addr = (pair.get("baseToken") or {}).get("address","")
+        liq_locked, liq_status = check_liquidity_lock(token_addr, pair.get("chainId",""))
         print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({pair.get('chainId','')})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
@@ -192,6 +216,8 @@ def scan():
             "ai_summary": ai.get("summary",""),
             "risk_score": ai.get("risk_score",5),
             "project_type": ai.get("project_type","Bilinmiyor"),
+            "liq_locked": liq_locked,
+            "liq_status": liq_status,
             "notified": 1,
             "discovered_at": datetime.now(timezone.utc).isoformat()
         }
