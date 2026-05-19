@@ -51,7 +51,8 @@ def fetch_pairs(keyword):
 
 def is_new(pair):
     ms = pair.get("pairCreatedAt")
-    if not ms: return False
+    if not ms:
+        return False
     return (time.time()*1000 - ms) / (1000*86400) <= MAX_AGE_DAYS
 
 def ok_filter(pair):
@@ -125,23 +126,10 @@ Web: {web or "yok"} | Twitter: {tw or "yok"} | Telegram: {tg or "yok"}
         print(f"AI hata: {e}")
         return {"project_type":"Bilinmiyor","risk_score":5,"wash_trading":False,"summary":"Analiz yapilamadi."}
 
-def send_tg(d):
-    r = d["risk_score"]
-    emoji = "🟢" if r<=3 else "🟡" if r<=6 else "🔴"
-    wash = "⚠️ WASH TRADING TESPIT EDILDI!\n" if d.get("wash_trading") else ""
-    liq_emoji = "✅" if "kilitli" in d["liq_status"].lower() and "degil" not in d["liq_status"].lower() else "⚠️" if "honeypot" in d["liq_status"].lower() else "❌"
-    msg = f"""🚨 Yeni Token: {d["base_name"]} ({d["base_symbol"]})
-🔗 {d["chain_id"]} | {d["dex_id"]}
-💧 Likidite: ${d["liquidity_usd"]:,.0f} | Hacim: ${d["volume_24h"]:,.0f}
-📈 Alım: {d["buys_24h"]} | Satım: {d["sells_24h"]}
-🏷️ Tip: {d["project_type"]} | Risk: {emoji} {r}/10
-{liq_emoji} {d["liq_status"]}
-{wash}📝 {d["ai_summary"]}
-🔎 https://dexscreener.com/{d["chain_id"]}/{d["pair_address"]}"""
+def send_tg(msg):
     try:
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
-        print(f"Bildirim: {d['base_symbol']}")
     except Exception as e:
         print(f"Telegram hata: {e}")
 
@@ -169,17 +157,15 @@ def check_price_changes():
                     continue
                 change = ((new_price - old_price) / old_price) * 100
                 if change >= 50:
-                    msg = f"🚀 PUMP! {row['base_name']} ({row['base_symbol']})\n+{change:.1f}% yükseldi!\nEski: ${old_price:.6f} → Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}"
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                        json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+                    send_tg(f"🚀 PUMP! {row['base_name']} ({row['base_symbol']})\n+{change:.1f}% yukseldi!\nEski: ${old_price:.6f} Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}")
                     conn2 = sqlite3.connect(DB_PATH)
                     conn2.execute("UPDATE tokens SET price_usd=? WHERE pair_address=?", (str(new_price), addr))
                     conn2.commit()
                     conn2.close()
                 elif change <= -30:
-                    msg = f"📉 DUMP! {row['base_name']} ({row['base_symbol']})\n{change:.1f}% düştü!\nEski: ${old_price:.6f} → Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}"
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                        json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+                    send_tg(f"📉 DUMP! {row['base_name']} ({row['base_symbol']})\n{change:.1f}% dustu!\nEski: ${old_price:.6f} Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}")
+            except:
+                pass
     except Exception as e:
         print(f"Fiyat takip hata: {e}")
 
@@ -190,9 +176,11 @@ def scan():
     pairs = fetch_pairs(keyword)
     print(f"  {len(pairs)} cift bulundu")
     for pair in pairs:
-        if not is_new(pair) or not ok_filter(pair): continue
+        if not is_new(pair) or not ok_filter(pair):
+            continue
         addr = pair.get("pairAddress","")
-        if not addr or is_notified(addr): continue
+        if not addr or is_notified(addr):
+            continue
         web, tw, tg = get_socials(pair)
         token_addr = (pair.get("baseToken") or {}).get("address","")
         liq_status = check_liquidity_lock(token_addr, pair.get("chainId",""))
@@ -203,6 +191,19 @@ def scan():
         liq  = pair.get("liquidity",{})
         vol  = pair.get("volume",{})
         txns = pair.get("txns",{}).get("h24",{})
+        r = ai.get("risk_score",5)
+        emoji = "🟢" if r<=3 else "🟡" if r<=6 else "🔴"
+        wash = "⚠️ WASH TRADING TESPIT EDILDI!\n" if ai.get("wash_trading") else ""
+        liq_emoji = "✅" if "kilitli" in liq_status.lower() and "degil" not in liq_status.lower() else "⚠️" if "honeypot" in liq_status.lower() else "❌"
+        msg = f"""🚨 Yeni Token: {base.get("name","")} ({base.get("symbol","")})
+🔗 {pair.get("chainId","")} | {pair.get("dexId","")}
+💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
+📈 Alım: {txns.get("buys",0)} | Satım: {txns.get("sells",0)}
+🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
+{liq_emoji} {liq_status}
+{wash}📝 {ai.get("summary","")}
+🔎 https://dexscreener.com/{pair.get("chainId","")}/{addr}"""
+        send_tg(msg)
         d = {
             "pair_address": addr, "chain_id": pair.get("chainId",""),
             "base_symbol": base.get("symbol",""), "base_name": base.get("name",""),
@@ -212,16 +213,15 @@ def scan():
             "volume_24h": vol.get("h24",0), "price_usd": str(pair.get("priceUsd","0")),
             "buys_24h": txns.get("buys",0), "sells_24h": txns.get("sells",0),
             "website": web, "twitter": tw, "telegram": tg,
-            "ai_summary": ai.get("summary",""), "risk_score": ai.get("risk_score",5),
+            "ai_summary": ai.get("summary",""), "risk_score": r,
             "project_type": ai.get("project_type","Bilinmiyor"),
             "liq_status": liq_status, "notified": 1,
             "discovered_at": datetime.now(timezone.utc).isoformat()
         }
-        d["wash_trading"] = ai.get("wash_trading", False)
         save_token(d)
-        send_tg(d)
+        print(f"  Bildirim: {base.get('symbol','')}")
         found += 1
-  print(f"Bitti. {found} yeni token.")
+    print(f"Bitti. {found} yeni token.")
     check_price_changes()
 
 init_db()
