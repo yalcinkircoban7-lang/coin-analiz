@@ -7,9 +7,9 @@ OPENROUTER_API_KEY = "sk-or-v1-b24c2ea284ebff85334d833b586d52a2179532b746fb9e2c9
 TELEGRAM_BOT_TOKEN = "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q"
 TELEGRAM_CHAT_ID   = "993355449"
 DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 100
-MIN_LIQUIDITY_USD  = 10000
-MIN_VOLUME_24H_USD = 3000
+MAX_AGE_DAYS       = 60
+MIN_LIQUIDITY_USD  = 5000
+MIN_VOLUME_24H_USD = 1000
 SCAN_INTERVAL_MIN  = 5
 CHAINS = ["ethereum", "bsc", "solana", "base", "arbitrum"]
 RISK_EMOJI = {1:"G",2:"G",3:"G",4:"O",5:"O",6:"O",7:"R",8:"R",9:"R",10:"R"}
@@ -41,7 +41,7 @@ def is_notified(addr):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT notified FROM tokens WHERE pair_address=?", (addr,)).fetchone()
     conn.close()
-    return bool(row and row[0])
+    return bool(row)
 
 def mark_notified(addr):
     conn = sqlite3.connect(DB_PATH)
@@ -51,7 +51,7 @@ def mark_notified(addr):
 
 def fetch_pairs(chain):
     try:
-        url = f"https://api.dexscreener.com/latest/dex/search?q={__import__('random').choice(['sol','base','defi','meme','ai','inu','moon','doge','pepe','cat','baby','elon','trump','biden','shib'])}"
+        url = f"https://api.dexscreener.com/latest/dex/search?q={__import__('random').choice(['pump','launch','gem','fair','stealth','new','alpha','micro','nano','mini'])}"
         r = requests.get(url, timeout=15)
         data = r.json()
         if isinstance(data, list):
@@ -97,11 +97,12 @@ def analyze(pair, web, tw, tg):
     vol = pair.get("volume",{})
     txns = pair.get("txns",{}).get("h24",{})
     prompt = f"""Token analiz et ve sadece JSON don:
-{{"project_type":"Memecoin/Utility/DeFi/AI/Bilinmiyor","risk_score":5,"summary":"Turkce 2 cumle"}}
+{{"project_type":"Memecoin/Utility/DeFi/AI/Bilinmiyor","risk_score":5,"wash_trading":false,"summary":"Turkce 2 cumle"}}
 Bilgiler: {base.get("name")} ({base.get("symbol")}), Zincir:{pair.get("chainId")},
 Likidite:${liq.get("usd",0):.0f}, Hacim:${vol.get("h24",0):.0f},
 Alim:{txns.get("buys",0)}, Satim:{txns.get("sells",0)},
-Web:{web or "yok"}, Twitter:{tw or "yok"}, Telegram:{tg or "yok"}"""
+Web:{web or "yok"}, Twitter:{tw or "yok"}, Telegram:{tg or "yok"}
+Wash trading kontrolu: Alim ve satim sayilari cok yakinsa ve ayni cuzdanlar islem yapiyorsa wash_trading=true yap ve risk_score en az 9 ver."""
     try:
         r = requests.post("https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization":f"Bearer {OPENROUTER_API_KEY}","Content-Type":"application/json"},
@@ -120,6 +121,8 @@ def send_tg(d):
 Zincir: {d["chain_id"]} | DEX: {d["dex_id"]}
 Likidite: ${d["liquidity_usd"]:,.0f} | Hacim: ${d["volume_24h"]:,.0f}
 Tip: {d["project_type"]} | Risk: {emoji} {r}/10
+{"⚠️ WASH TRADING TESPİT EDİLDİ! Bu coinden uzak dur!" if d.get("wash_trading") else ""}
+{d["ai_summary"]}
 {d["ai_summary"]}
 https://dexscreener.com/{d["chain_id"]}/{d["pair_address"]}"""
     try:
