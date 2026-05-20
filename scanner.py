@@ -19,8 +19,8 @@ def init_db():
         liquidity_usd REAL, fdv_usd REAL, volume_24h REAL, price_usd TEXT,
         buys_24h INTEGER, sells_24h INTEGER, website TEXT, twitter TEXT,
         telegram TEXT, ai_summary TEXT, risk_score INTEGER, project_type TEXT,
-        liq_status TEXT, holder_status TEXT, notified INTEGER DEFAULT 0,
-        discovered_at TEXT)""")
+        liq_status TEXT, holder_status TEXT, web_summary TEXT,
+        notified INTEGER DEFAULT 0, discovered_at TEXT)""")
     conn.commit()
     conn.close()
     print("Veritabani hazir.")
@@ -38,7 +38,7 @@ def save_token(data):
         :pair_created,:liquidity_usd,:fdv_usd,:volume_24h,:price_usd,
         :buys_24h,:sells_24h,:website,:twitter,:telegram,
         :ai_summary,:risk_score,:project_type,:liq_status,:holder_status,
-        :notified,:discovered_at)""", data)
+        :web_summary,:notified,:discovered_at)""", data)
     conn.commit()
     conn.close()
 
@@ -92,18 +92,45 @@ def get_top_transactions(chain_id, pair_address):
         data = r.json()
         pairs = data.get("pairs") or []
         if not pairs:
-            return "", ""
+            return ""
         pair = pairs[0]
         txns = pair.get("txns", {})
         buys_h1 = txns.get("h1", {}).get("buys", 0)
         sells_h1 = txns.get("h1", {}).get("sells", 0)
         vol_h1 = pair.get("volume", {}).get("h1", 0)
         vol_h6 = pair.get("volume", {}).get("h6", 0)
-        buy_info = f"Son 1s: {buys_h1} alim | Son 6s: {vol_h6:,.0f}$"
-        sell_info = f"Son 1s: {sells_h1} satim | Toplam: {vol_h1:,.0f}$"
-        return buy_info, sell_info
+        return f"Son 1s: {buys_h1} alim / {sells_h1} satim | Hacim 1s: ${vol_h1:,.0f} | Hacim 6s: ${vol_h6:,.0f}"
     except:
-        return "", ""
+        return ""
+
+def analyze_website(website_url):
+    if not website_url:
+        return "Web sitesi yok"
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(website_url, timeout=10, headers=headers)
+        text = r.text[:3000]
+        prompt = f"""Bu kripto projesinin web sitesi icerigini analiz et. Sadece JSON don:
+{{"team":"ekip bilgisi veya Bilinmiyor","investors":"yatirimcilar veya Bilinmiyor","summary":"Turkce 1 cumle proje ozeti"}}
+
+Web sitesi icerigi:
+{text}"""
+        result = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
+            json={"model": "openai/gpt-4o-mini", "max_tokens": 200, "messages": [{"role": "user", "content": prompt}]},
+            timeout=20
+        ).json()
+        if "choices" not in result:
+            return "Web analizi yapilamadi"
+        raw = result["choices"][0]["message"]["content"].strip()
+        data = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
+        team = data.get("team","Bilinmiyor")
+        investors = data.get("investors","Bilinmiyor")
+        summary = data.get("summary","")
+        return f"Ekip: {team} | Yatirimcilar: {investors} | {summary}"
+    except:
+        return "Web analizi yapilamadi"
 
 def check_token_security(token_address, chain_id):
     chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161","solana":"900"}
@@ -233,7 +260,8 @@ def scan():
         chain_id = pair.get("chainId","")
         liq_status, holder_status = check_token_security(token_addr, chain_id)
         age_str = get_pair_age(pair.get("pairCreatedAt"))
-        buy_info, sell_info = get_top_transactions(chain_id, addr)
+        txn_info = get_top_transactions(chain_id, addr)
+        web_summary = analyze_website(web) if web else "Web sitesi yok"
         print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({chain_id})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
@@ -250,12 +278,12 @@ def scan():
 🔗 {chain_id} | {pair.get("dexId","")}
 🕐 {age_str}
 💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
-💰 Market Cap: ${pair.get("fdv",0):,.0f}
 📈 Alım: {txns.get("buys",0)} | Satım: {txns.get("sells",0)}
-📊 {buy_info}
+📊 {txn_info}
 🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
 {liq_emoji} {liq_status}
 {holder_emoji} {holder_status}
+🌐 {web_summary}
 {wash}📝 {ai.get("summary","")}
 🔎 https://dexscreener.com/{chain_id}/{addr}"""
         send_tg(msg)
@@ -271,7 +299,7 @@ def scan():
             "ai_summary": ai.get("summary",""), "risk_score": r,
             "project_type": ai.get("project_type","Bilinmiyor"),
             "liq_status": liq_status, "holder_status": holder_status,
-            "notified": 1,
+            "web_summary": web_summary, "notified": 1,
             "discovered_at": datetime.now(timezone.utc).isoformat()
         }
         save_token(d)
