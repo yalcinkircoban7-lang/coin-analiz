@@ -132,6 +132,45 @@ Web sitesi icerigi:
     except:
         return "Web analizi yapilamadi"
 
+def get_deployer_tokens(token_address, chain_id):
+    try:
+        if chain_id == "solana":
+            url = f"https://api.solscan.io/token/meta?tokenAddress={token_address}"
+            r = requests.get(url, timeout=10)
+            data = r.json()
+            creator = data.get("creator","")
+            if not creator:
+                return "Deployer bilgisi yok"
+            url2 = f"https://api.solscan.io/account/tokens?address={creator}&limit=5"
+            r2 = requests.get(url2, timeout=10)
+            tokens = r2.json().get("data",[])
+            if not tokens:
+                return "Baska coin bulunamadi"
+            names = [t.get("tokenName","?") for t in tokens[:3]]
+            return f"Deployer diger coinleri: {', '.join(names)}"
+        elif chain_id in ["ethereum","bsc","base","arbitrum"]:
+            chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161"}
+            chain_num = chain_map.get(chain_id,"1")
+            api_map = {
+                "1": "https://api.etherscan.io/api",
+                "56": "https://api.bscscan.com/api",
+                "8453": "https://api.basescan.org/api",
+                "42161": "https://api.arbiscan.io/api"
+            }
+            url = f"{api_map.get(chain_num,'https://api.etherscan.io/api')}?module=contract&action=getcontractcreation&contractaddresses={token_address}"
+            r = requests.get(url, timeout=10)
+            data = r.json()
+            result = data.get("result",[])
+            if not result:
+                return "Deployer bilgisi yok"
+            deployer = result[0].get("contractCreator","")
+            if not deployer:
+                return "Deployer bilgisi yok"
+            return f"Deployer adresi: {deployer[:10]}..."
+        return "Desteklenmeyen zincir"
+    except:
+        return "Deployer analizi yapilamadi"
+
 def check_token_security(token_address, chain_id):
     chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161","solana":"900"}
     chain = chain_map.get(chain_id, "1")
@@ -262,6 +301,7 @@ def scan():
         age_str = get_pair_age(pair.get("pairCreatedAt"))
         txn_info = get_top_transactions(chain_id, addr)
         web_summary = analyze_website(web) if web else "Web sitesi yok"
+        deployer_info = get_deployer_tokens(token_addr, chain_id)
         print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({chain_id})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
@@ -284,6 +324,7 @@ def scan():
 {liq_emoji} {liq_status}
 {holder_emoji} {holder_status}
 🌐 {web_summary}
+👤 {deployer_info}
 {wash}📝 {ai.get("summary","")}
 🔎 https://dexscreener.com/{chain_id}/{addr}"""
         send_tg(msg)
