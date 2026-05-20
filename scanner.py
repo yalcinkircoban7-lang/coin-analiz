@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
+ETHERSCAN_API_KEY  = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
 DB_PATH            = "coins.db"
 MAX_AGE_DAYS       = 60
 MIN_LIQUIDITY_USD  = 5000
@@ -134,40 +135,34 @@ Web sitesi icerigi:
 
 def get_deployer_tokens(token_address, chain_id):
     try:
-        if chain_id == "solana":
-            url = f"https://api.solscan.io/token/meta?tokenAddress={token_address}"
-            r = requests.get(url, timeout=10)
-            data = r.json()
-            creator = data.get("creator","")
-            if not creator:
-                return "Deployer bilgisi yok"
-            url2 = f"https://api.solscan.io/account/tokens?address={creator}&limit=5"
-            r2 = requests.get(url2, timeout=10)
-            tokens = r2.json().get("data",[])
-            if not tokens:
-                return "Baska coin bulunamadi"
-            names = [t.get("tokenName","?") for t in tokens[:3]]
-            return f"Deployer diger coinleri: {', '.join(names)}"
-        elif chain_id in ["ethereum","bsc","base","arbitrum"]:
-            chain_map = {"ethereum":"1","bsc":"56","base":"8453","arbitrum":"42161"}
-            chain_num = chain_map.get(chain_id,"1")
-            api_map = {
-                "1": "https://api.etherscan.io/api",
-                "56": "https://api.bscscan.com/api",
-                "8453": "https://api.basescan.org/api",
-                "42161": "https://api.arbiscan.io/api"
-            }
-            url = f"{api_map.get(chain_num,'https://api.etherscan.io/api')}?module=contract&action=getcontractcreation&contractaddresses={token_address}"
-            r = requests.get(url, timeout=10)
-            data = r.json()
-            result = data.get("result",[])
-            if not result:
-                return "Deployer bilgisi yok"
-            deployer = result[0].get("contractCreator","")
-            if not deployer:
-                return "Deployer bilgisi yok"
-            return f"Deployer adresi: {deployer[:10]}..."
-        return "Desteklenmeyen zincir"
+        api_map = {
+            "ethereum": "https://api.etherscan.io/api",
+            "bsc": "https://api.bscscan.com/api",
+            "base": "https://api.basescan.org/api",
+            "arbitrum": "https://api.arbiscan.io/api",
+        }
+        if chain_id not in api_map:
+            return "Solana/desteklenmeyen zincir"
+        api_url = api_map[chain_id]
+        url = f"{api_url}?module=contract&action=getcontractcreation&contractaddresses={token_address}&apikey={ETHERSCAN_API_KEY}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        result = data.get("result",[])
+        if not result:
+            return "Deployer bilgisi yok"
+        deployer = result[0].get("contractCreator","")
+        if not deployer:
+            return "Deployer bilgisi yok"
+        url2 = f"{api_url}?module=account&action=txlist&address={deployer}&sort=desc&page=1&offset=20&apikey={ETHERSCAN_API_KEY}"
+        r2 = requests.get(url2, timeout=10)
+        txs = r2.json().get("result",[])
+        contracts = []
+        for tx in txs:
+            if tx.get("to","") == "" and tx.get("contractAddress",""):
+                contracts.append(tx["contractAddress"][:10]+"...")
+        if not contracts:
+            return f"Deployer: {deployer[:10]}... | Baska kontrat yok"
+        return f"Deployer: {deployer[:10]}... | Onceki kontratlar: {', '.join(contracts[:3])}"
     except:
         return "Deployer analizi yapilamadi"
 
@@ -323,8 +318,8 @@ def scan():
 🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
 {liq_emoji} {liq_status}
 {holder_emoji} {holder_status}
-🌐 {web_summary}
 👤 {deployer_info}
+🌐 {web_summary}
 {wash}📝 {ai.get("summary","")}
 🔎 https://dexscreener.com/{chain_id}/{addr}"""
         send_tg(msg)
