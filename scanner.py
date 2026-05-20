@@ -207,6 +207,10 @@ def check_price_changes():
                     conn2.close()
                 elif change <= -30:
                     send_tg(f"📉 DUMP! {row['base_name']} ({row['base_symbol']})\n{change:.1f}% dustu!\nEski: ${old_price:.6f} Yeni: ${new_price:.6f}\nhttps://dexscreener.com/{chain}/{addr}")
+                    conn2 = sqlite3.connect(DB_PATH)
+                    conn2.execute("UPDATE tokens SET price_usd=? WHERE pair_address=?", (str(new_price), addr))
+                    conn2.commit()
+                    conn2.close()
             except:
                 pass
     except Exception as e:
@@ -246,6 +250,7 @@ def scan():
 🔗 {chain_id} | {pair.get("dexId","")}
 🕐 {age_str}
 💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
+💰 Market Cap: ${pair.get("fdv",0):,.0f}
 📈 Alım: {txns.get("buys",0)} | Satım: {txns.get("sells",0)}
 📊 {buy_info}
 🏷️ Tip: {ai.get("project_type","Bilinmiyor")} | Risk: {emoji} {r}/10
