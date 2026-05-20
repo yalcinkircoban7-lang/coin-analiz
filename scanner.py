@@ -6,7 +6,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRI
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 ETHERSCAN_API_KEY  = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
 DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 60
+MAX_AGE_DAYS       = 365
 MIN_LIQUIDITY_USD  = 5000
 MIN_VOLUME_24H_USD = 1000
 SCAN_INTERVAL_MIN  = 5
@@ -137,7 +137,7 @@ def get_deployer_tokens(token_address, chain_id):
     try:
         api_map = {
             "ethereum": "https://api.etherscan.io/api",
-            "bsc": "https://api.bscscan.com/api",
+            "bsc": "https://api.etherscan.io/v2/api?chainid=56&",
             "base": "https://api.basescan.org/api",
             "arbitrum": "https://api.arbiscan.io/api",
         }
