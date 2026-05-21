@@ -6,7 +6,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRI
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 ETHERSCAN_API_KEY  = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
 DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 30
+MAX_AGE_DAYS       = 14
 MIN_LIQUIDITY_USD  = 30000
 MIN_VOLUME_24H_USD = 3000
 SCAN_INTERVAL_MIN  = 5
@@ -22,6 +22,8 @@ def init_db():
         telegram TEXT, ai_summary TEXT, risk_score INTEGER, project_type TEXT,
         liq_status TEXT, holder_status TEXT, web_summary TEXT,
         notified INTEGER DEFAULT 0, discovered_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS coingecko_notified (
+        coin_id TEXT PRIMARY KEY, notified_at TEXT)""")
     conn.commit()
     conn.close()
     print("Veritabani hazir.")
@@ -31,6 +33,19 @@ def is_notified(addr):
     row = conn.execute("SELECT pair_address FROM tokens WHERE pair_address=?", (addr,)).fetchone()
     conn.close()
     return bool(row)
+
+def is_coingecko_notified(coin_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT coin_id FROM coingecko_notified WHERE coin_id=?", (coin_id,)).fetchone()
+    conn.close()
+    return bool(row)
+
+def mark_coingecko_notified(coin_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT OR REPLACE INTO coingecko_notified VALUES (?,?)",
+        (coin_id, datetime.now(timezone.utc).isoformat()))
+    conn.commit()
+    conn.close()
 
 def save_token(data):
     conn = sqlite3.connect(DB_PATH)
@@ -221,7 +236,6 @@ Web: {web or "yok"} | Twitter: {tw or "yok"} | Telegram: {tg or "yok"}
         )
         result = r.json()
         if "choices" not in result:
-            print(f"API yaniti: {result}")
             return {"project_type":"Bilinmiyor","risk_score":5,"wash_trading":False,"summary":"Analiz yapilamadi."}
         raw = result["choices"][0]["message"]["content"].strip()
         return json.loads(raw[raw.find("{"):raw.rfind("}")+1])
@@ -235,6 +249,54 @@ def send_tg(msg):
             json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
     except Exception as e:
         print(f"Telegram hata: {e}")
+
+def check_coingecko_trending():
+    try:
+        r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=15)
+        data = r.json()
+        coins = data.get("coins", [])
+        for item in coins[:5]:
+            coin = item.get("item", {})
+            coin_id = coin.get("id","")
+            name = coin.get("name","")
+            symbol = coin.get("symbol","")
+            price_change = coin.get("data",{}).get("price_change_percentage_24h",{}).get("usd",0)
+            market_cap = coin.get("data",{}).get("market_cap","")
+            if is_coingecko_notified(coin_id):
+                continue
+            msg = f"""🔥 CoinGecko Trend!
+💎 {name} ({symbol})
+📈 24s Degisim: %{price_change:.1f}
+💰 Piyasa Degeri: {market_cap}
+🔎 https://coingecko.com/en/coins/{coin_id}"""
+            send_tg(msg)
+            mark_coingecko_notified(coin_id)
+            print(f"  CoinGecko trend: {symbol}")
+            time.sleep(0.5)
+    except Exception as e:
+        print(f"CoinGecko hata: {e}")
+
+def check_coingecko_new():
+    try:
+        r = requests.get("https://api.coingecko.com/api/v3/coins/list/new", timeout=15)
+        coins = r.json()
+        for coin in coins[:3]:
+            coin_id = coin.get("id","")
+            name = coin.get("name","")
+            symbol = coin.get("symbol","")
+            activated_at = coin.get("activated_at",0)
+            if is_coingecko_notified(f"new_{coin_id}"):
+                continue
+            msg = f"""🆕 CoinGecko Yeni Listing!
+💎 {name} ({symbol.upper()})
+🕐 Listelenme: {datetime.fromtimestamp(activated_at).strftime('%d.%m.%Y %H:%M') if activated_at else 'Bilinmiyor'}
+🔎 https://coingecko.com/en/coins/{coin_id}"""
+            send_tg(msg)
+            mark_coingecko_notified(f"new_{coin_id}")
+            print(f"  CoinGecko yeni: {symbol}")
+            time.sleep(0.5)
+    except Exception as e:
+        print(f"CoinGecko yeni listing hata: {e}")
 
 def check_price_changes():
     try:
@@ -347,6 +409,8 @@ def scan():
         found += 1
     print(f"Bitti. {found} yeni token.")
     check_price_changes()
+    check_coingecko_trending()
+    check_coingecko_new()
 
 init_db()
 print(f"API Key uzunlugu: {len(OPENROUTER_API_KEY)}")
