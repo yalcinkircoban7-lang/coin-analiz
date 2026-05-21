@@ -7,10 +7,10 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 ETHERSCAN_API_KEY  = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
 DB_PATH            = "coins.db"
 MAX_AGE_DAYS       = 365
-MIN_LIQUIDITY_USD  = 5000
-MIN_VOLUME_24H_USD = 1000
+MIN_LIQUIDITY_USD  = 30000
+MIN_VOLUME_24H_USD = 3000
 SCAN_INTERVAL_MIN  = 5
-KEYWORDS = ["pump","launch","gem","fair","alpha","micro","nano","mini","new","stealth"]
+KEYWORDS = ["launch","gem","fair","alpha","micro","nano","mini","stealth","vault","protocol"]
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -113,7 +113,6 @@ def analyze_website(website_url):
         text = r.text[:3000]
         prompt = f"""Bu kripto projesinin web sitesi icerigini analiz et. Sadece JSON don:
 {{"team":"ekip bilgisi veya Bilinmiyor","investors":"yatirimcilar veya Bilinmiyor","summary":"Turkce 1 cumle proje ozeti"}}
-
 Web sitesi icerigi:
 {text}"""
         result = requests.post(
@@ -281,6 +280,7 @@ def scan():
     keyword = random.choice(KEYWORDS)
     print(f"\nTarama: {datetime.now().strftime('%H:%M:%S')} | Kelime: {keyword}")
     found = 0
+    seen_symbols = set()
     pairs = fetch_pairs(keyword)
     print(f"  {len(pairs)} cift bulundu")
     for pair in pairs:
@@ -289,6 +289,10 @@ def scan():
         addr = pair.get("pairAddress","")
         if not addr or is_notified(addr):
             continue
+        base_symbol = (pair.get("baseToken") or {}).get("symbol","")
+        if base_symbol in seen_symbols:
+            continue
+        seen_symbols.add(base_symbol)
         web, tw, tg = get_socials(pair)
         token_addr = (pair.get("baseToken") or {}).get("address","")
         chain_id = pair.get("chainId","")
@@ -297,7 +301,7 @@ def scan():
         txn_info = get_top_transactions(chain_id, addr)
         web_summary = analyze_website(web) if web else "Web sitesi yok"
         deployer_info = get_deployer_tokens(token_addr, chain_id)
-        print(f"  Yeni: {pair.get('baseToken',{}).get('symbol','?')} ({chain_id})")
+        print(f"  Yeni: {base_symbol} ({chain_id})")
         ai = analyze(pair, web, tw, tg)
         time.sleep(1)
         base = pair.get("baseToken",{})
@@ -309,7 +313,7 @@ def scan():
         wash = "⚠️ WASH TRADING TESPIT EDILDI!\n" if ai.get("wash_trading") else ""
         liq_emoji = "✅" if "kilitli" in liq_status.lower() and "degil" not in liq_status.lower() else "⚠️" if "honeypot" in liq_status.lower() else "❌"
         holder_emoji = "⚠️" if "rug" in holder_status.lower() else "🟡" if "dikkat" in holder_status.lower() else "✅"
-        msg = f"""🚨 Yeni Token: {base.get("name","")} ({base.get("symbol","")})
+        msg = f"""🚨 Yeni Token: {base.get("name","")} ({base_symbol})
 🔗 {chain_id} | {pair.get("dexId","")}
 🕐 {age_str}
 💧 Likidite: ${liq.get("usd",0):,.0f} | Hacim: ${vol.get("h24",0):,.0f}
@@ -325,7 +329,7 @@ def scan():
         send_tg(msg)
         d = {
             "pair_address": addr, "chain_id": chain_id,
-            "base_symbol": base.get("symbol",""), "base_name": base.get("name",""),
+            "base_symbol": base_symbol, "base_name": base.get("name",""),
             "quote_symbol": (pair.get("quoteToken") or {}).get("symbol",""),
             "dex_id": pair.get("dexId",""), "pair_created": pair.get("pairCreatedAt",0),
             "liquidity_usd": liq.get("usd",0), "fdv_usd": pair.get("fdv",0),
@@ -339,7 +343,7 @@ def scan():
             "discovered_at": datetime.now(timezone.utc).isoformat()
         }
         save_token(d)
-        print(f"  Bildirim: {base.get('symbol','')}")
+        print(f"  Bildirim: {base_symbol}")
         found += 1
     print(f"Bitti. {found} yeni token.")
     check_price_changes()
