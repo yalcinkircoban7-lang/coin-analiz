@@ -6,6 +6,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLR
 TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "-1003973970557")
 ETHERSCAN_API_KEY   = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
+BITQUERY_TOKEN      = "ory_at_6HnqUctQJy74XNlxyDoBPbymV6Xa-5tw0FG8JoVmOcU.4LB6zwLGXk1xf_RLYdbc3AdbyrOoJVykd8uFwaTfJ_o"
 DB_PATH             = "coins.db"
 MAX_AGE_DAYS        = 14
 MIN_LIQUIDITY_USD   = 30000
@@ -252,6 +253,57 @@ def send_tg(msg):
         except Exception as e:
             print(f"Telegram hata: {e}")
 
+def check_whale_alert():
+    try:
+        query = """{
+  EVM(network: eth) {
+    Transfers(
+      where: {Transfer: {AmountInUSD: {gt: "100000"}}}
+      limit: {count: 5}
+      orderBy: {descending: Block_Time}
+    ) {
+      Transfer {
+        Amount
+        AmountInUSD
+        Currency { Name Symbol }
+        Sender
+        Receiver
+      }
+    }
+  }
+}"""
+        r = requests.post(
+            "https://streaming.bitquery.io/graphql",
+            headers={"Authorization": f"Bearer {BITQUERY_TOKEN}", "Content-Type": "application/json"},
+            json={"query": query},
+            timeout=15
+        )
+        data = r.json()
+        transfers = data.get("data",{}).get("EVM",{}).get("Transfers",[])
+        for tx in transfers:
+            t = tx.get("Transfer",{})
+            amount_usd = float(t.get("AmountInUSD",0))
+            symbol = t.get("Currency",{}).get("Symbol","?")
+            name = t.get("Currency",{}).get("Name","?")
+            amount = float(t.get("Amount",0))
+            sender = t.get("Sender","")[:10]
+            receiver = t.get("Receiver","")[:10]
+            key = f"whale_{sender}_{receiver}_{symbol}_{int(amount_usd)}"
+            if is_coingecko_notified(key):
+                continue
+            msg = f"""🐋 BALINA HAREKETI!
+💎 {name} ({symbol})
+💰 Miktar: {amount:,.0f} {symbol} (${amount_usd:,.0f})
+📤 Gonderen: {sender}...
+📥 Alan: {receiver}...
+🔎 https://etherscan.io/token/{symbol}"""
+            send_tg(msg)
+            mark_coingecko_notified(key)
+            print(f"  Whale: {symbol} ${amount_usd:,.0f}")
+            time.sleep(0.5)
+    except Exception as e:
+        print(f"Whale alert hata: {e}")
+
 def check_coingecko_trending():
     try:
         r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=15)
@@ -302,6 +354,35 @@ def check_coingecko_new():
             time.sleep(0.5)
     except Exception as e:
         print(f"CoinGecko yeni listing hata: {e}")
+
+def send_morning_bulletin():
+    now = datetime.now()
+    if now.hour != 9 or now.minute > 5:
+        return
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT * FROM tokens
+            WHERE notified=1
+            AND discovered_at > datetime('now', '-24 hours')
+            ORDER BY risk_score ASC, volume_24h DESC
+            LIMIT 5
+        """).fetchall()
+        conn.close()
+        if not rows:
+            return
+        msg = "🌅 Sabah Bulteni - En Iyi Tokenlar\n\n"
+        for i, row in enumerate(rows, 1):
+            row = dict(row)
+            emoji = "🟢" if row["risk_score"] <= 3 else "🟡" if row["risk_score"] <= 6 else "🔴"
+            msg += f"{i}. {row['base_name']} ({row['base_symbol']})\n"
+            msg += f"   {emoji} Risk: {row['risk_score']}/10 | Hacim: ${row['volume_24h']:,.0f}\n"
+            msg += f"   https://dexscreener.com/{row['chain_id']}/{row['pair_address']}\n\n"
+        send_tg(msg)
+        print("Sabah bulteni gonderildi.")
+    except Exception as e:
+        print(f"Sabah bulteni hata: {e}")
 
 def check_price_changes():
     try:
@@ -416,6 +497,8 @@ def scan():
     check_price_changes()
     check_coingecko_trending()
     check_coingecko_new()
+    check_whale_alert()
+    send_morning_bulletin()
 
 init_db()
 print(f"API Key uzunlugu: {len(OPENROUTER_API_KEY)}")
