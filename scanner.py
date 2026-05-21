@@ -1,15 +1,16 @@
 import os, time, json, sqlite3, requests, random
 from datetime import datetime, timezone
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
-ETHERSCAN_API_KEY  = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
-DB_PATH            = "coins.db"
-MAX_AGE_DAYS       = 14
-MIN_LIQUIDITY_USD  = 30000
-MIN_VOLUME_24H_USD = 3000
-SCAN_INTERVAL_MIN  = 5
+OPENROUTER_API_KEY  = os.environ.get("OPENROUTER_API_KEY", "")
+TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "8748447906:AAE7EfjLRIvNwVoldO4WjiB7l0dgrfwAf-Q")
+TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "993355449")
+TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "-1003973970557")
+ETHERSCAN_API_KEY   = "VHGHSNQZXBBCBRPJ8N88W8X2G21D8J3MZX"
+DB_PATH             = "coins.db"
+MAX_AGE_DAYS        = 14
+MIN_LIQUIDITY_USD   = 30000
+MIN_VOLUME_24H_USD  = 3000
+SCAN_INTERVAL_MIN   = 5
 KEYWORDS = ["launch","gem","fair","alpha","micro","nano","mini","stealth","vault","protocol"]
 
 def init_db():
@@ -244,11 +245,12 @@ Web: {web or "yok"} | Twitter: {tw or "yok"} | Telegram: {tg or "yok"}
         return {"project_type":"Bilinmiyor","risk_score":5,"wash_trading":False,"summary":"Analiz yapilamadi."}
 
 def send_tg(msg):
-    try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
-    except Exception as e:
-        print(f"Telegram hata: {e}")
+    for chat_id in [TELEGRAM_CHAT_ID, TELEGRAM_CHANNEL_ID]:
+        try:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": msg}, timeout=10)
+        except Exception as e:
+            print(f"Telegram hata: {e}")
 
 def check_coingecko_trending():
     try:
