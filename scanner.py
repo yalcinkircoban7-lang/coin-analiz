@@ -14,6 +14,13 @@ MIN_VOLUME_24H_USD  = 3000
 SCAN_INTERVAL_MIN   = 5
 KEYWORDS = ["launch","gem","fair","alpha","micro","nano","mini","stealth","vault","protocol"]
 
+STABLE_AND_MAJOR = {
+    "USDT","USDC","DAI","BUSD","TUSD","FRAX","LUSD","GUSD","USDP",
+    "WETH","WBTC","BTC","ETH","BNB","WBNB","SOL","WSOL",
+    "MATIC","WMATIC","AVAX","WAVAX","FTM","OP","ARB","LINK","UNI","AAVE",
+    "CRV","MKR","SNX","COMP","SUSHI","YFI","BAL","1INCH","LDO","RPL"
+}
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""CREATE TABLE IF NOT EXISTS tokens (
@@ -265,7 +272,7 @@ def check_whale_alert():
       Transfer {
         Amount
         AmountInUSD
-        Currency { Name Symbol }
+        Currency { Name Symbol SmartContract }
         Sender
         Receiver
       }
@@ -285,9 +292,12 @@ def check_whale_alert():
             amount_usd = float(t.get("AmountInUSD",0))
             symbol = t.get("Currency",{}).get("Symbol","?")
             name = t.get("Currency",{}).get("Name","?")
+            contract = t.get("Currency",{}).get("SmartContract","")
             amount = float(t.get("Amount",0))
             sender = t.get("Sender","")[:10]
             receiver = t.get("Receiver","")[:10]
+            if symbol.upper() in STABLE_AND_MAJOR:
+                continue
             key = f"whale_{sender}_{receiver}_{symbol}_{int(amount_usd)}"
             if is_coingecko_notified(key):
                 continue
@@ -296,7 +306,7 @@ def check_whale_alert():
 💰 Miktar: {amount:,.0f} {symbol} (${amount_usd:,.0f})
 📤 Gonderen: {sender}...
 📥 Alan: {receiver}...
-🔎 https://etherscan.io/token/{symbol}"""
+🔎 https://etherscan.io/token/{contract}"""
             send_tg(msg)
             mark_coingecko_notified(key)
             print(f"  Whale: {symbol} ${amount_usd:,.0f}")
@@ -317,6 +327,8 @@ def check_coingecko_trending():
             price_change = coin.get("data",{}).get("price_change_percentage_24h",{}).get("usd",0)
             market_cap = coin.get("data",{}).get("market_cap","")
             if not coin_id or is_coingecko_notified(coin_id):
+                continue
+            if symbol.upper() in STABLE_AND_MAJOR:
                 continue
             msg = f"""🔥 CoinGecko Trend!
 💎 {name} ({symbol})
