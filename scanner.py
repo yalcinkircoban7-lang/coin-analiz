@@ -258,7 +258,7 @@ def check_whale_alert():
         query = """{
   EVM(network: eth) {
     Transfers(
-      where: {Transfer: {AmountInUSD: {gt: "100000"}}}
+      where: {Transfer: {AmountInUSD: {gt: "1000000"}}}
       limit: {count: 5}
       orderBy: {descending: Block_Time}
     ) {
