@@ -262,7 +262,7 @@ def check_coingecko_trending():
             symbol = coin.get("symbol","")
             price_change = coin.get("data",{}).get("price_change_percentage_24h",{}).get("usd",0)
             market_cap = coin.get("data",{}).get("market_cap","")
-            if is_coingecko_notified(coin_id):
+            if not coin_id or is_coingecko_notified(coin_id):
                 continue
             msg = f"""🔥 CoinGecko Trend!
 💎 {name} ({symbol})
@@ -274,22 +274,25 @@ def check_coingecko_trending():
             print(f"  CoinGecko trend: {symbol}")
             time.sleep(0.5)
     except Exception as e:
-        print(f"CoinGecko hata: {e}")
+        print(f"CoinGecko trend hata: {e}")
 
 def check_coingecko_new():
     try:
         r = requests.get("https://api.coingecko.com/api/v3/coins/list/new", timeout=15)
-        coins = r.json()
-        for coin in coins[:3]:
+        data = r.json()
+        if not isinstance(data, list):
+            return
+        for coin in data[:3]:
             coin_id = coin.get("id","")
             name = coin.get("name","")
             symbol = coin.get("symbol","")
             activated_at = coin.get("activated_at",0)
-            if is_coingecko_notified(f"new_{coin_id}"):
+            if not coin_id or is_coingecko_notified(f"new_{coin_id}"):
                 continue
+            tarih = datetime.fromtimestamp(activated_at).strftime('%d.%m.%Y %H:%M') if activated_at else 'Bilinmiyor'
             msg = f"""🆕 CoinGecko Yeni Listing!
 💎 {name} ({symbol.upper()})
-🕐 Listelenme: {datetime.fromtimestamp(activated_at).strftime('%d.%m.%Y %H:%M') if activated_at else 'Bilinmiyor'}
+🕐 Listelenme: {tarih}
 🔎 https://coingecko.com/en/coins/{coin_id}"""
             send_tg(msg)
             mark_coingecko_notified(f"new_{coin_id}")
